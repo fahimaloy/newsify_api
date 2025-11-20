@@ -1,15 +1,19 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
+from sqlmodel import SQLModel
 from cj36.core.config import settings
 from cj36.api.v1.router import api_router
-from cj36.core.database import db
+from cj36.dependencies import engine
+
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await db.connect()
+    create_db_and_tables()
     yield
-    await db.disconnect()
 
 
 app = FastAPI(

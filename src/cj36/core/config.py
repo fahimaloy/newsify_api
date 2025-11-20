@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "cj36"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
-    SECRET_KEY: str = "change-me-in-production-please!"
+    SECRET_KEY: str
 
     # Database
     DB_HOST: str

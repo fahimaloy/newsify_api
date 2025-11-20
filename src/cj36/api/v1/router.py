@@ -1,22 +1,10 @@
-from fastapi import APIRouter, Depends
-from cj36.core.database import db
-import asyncpg
+from fastapi import APIRouter
+from cj36.api.v1 import users, categories, posts, system
 
 # This is the name main.py expects → must be called "api_router"
 api_router = APIRouter()
 
-
-@api_router.get("/health")
-async def health_check():
-    db_status = "ok"
-    try:
-        async with db.pool.acquire() as connection:
-            await connection.execute("SELECT 1")
-    except (asyncpg.exceptions.PostgresError, ConnectionRefusedError) as e:
-        db_status = f"error: {e}"
-
-    return {
-        "status": "healthy",
-        "project": "CJ36-API",
-        "database": db_status,
-    }
+api_router.include_router(system.router, prefix="/system", tags=["system"])
+api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
+api_router.include_router(posts.router, prefix="/posts", tags=["posts"])

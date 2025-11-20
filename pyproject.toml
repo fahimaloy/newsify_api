@@ -1,0 +1,36 @@
+[project]
+name = "CJ36-API"
+version = "0.1.0"
+description = "FastAPI Backend for Channel July 36 (cj36)"
+authors = [{ name = "Fahim Ahmed", email = "fahimaloy@gmail.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic-settings>=2.5.0",
+    "python-dotenv>=1.0.0",
+    "asyncpg>=0.29.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio",
+    "httpx",
+    "ruff",
+    "black",
+    "mypy",
+    "pre-commit",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# This is the only thing that was missing / wrong before
+[tool.hatch.build.targets.wheel]
+packages = ["src/cj36"]
+
+# Tell uv what the import name is (must be lowercase, no hyphens)
+[tool.uv]
+sources = { cj36 = { path = "src/cj36", editable = true }}

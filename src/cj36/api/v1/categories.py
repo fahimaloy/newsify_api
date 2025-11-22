@@ -4,7 +4,7 @@ from sqlmodel import Session
 from cj36.dependencies import (
     get_db,
     get_current_user,
-    RoleChecker,
+    AdminChecker,
     get_optional_current_user,
 )
 from cj36.models import Category, CategoryCreate, CategoryRead, User
@@ -16,7 +16,7 @@ router = APIRouter()
 def create_category(
     category: CategoryCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin", "maintainer", "writer"])),
+    current_user: User = Depends(AdminChecker(["admin", "maintainer", "writer"])),
 ):
     db_category = Category.from_orm(category)
     db.add(db_category)
@@ -53,7 +53,7 @@ def update_category(
     category_id: int,
     category: CategoryCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin"])),
+    current_user: User = Depends(AdminChecker(["admin"])),
 ):
     db_category = db.get(Category, category_id)
     if not db_category:
@@ -71,7 +71,7 @@ def update_category(
 def delete_category(
     category_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin"])),
+    current_user: User = Depends(AdminChecker(["admin"])),
 ):
     db_category = db.get(Category, category_id)
     if not db_category:

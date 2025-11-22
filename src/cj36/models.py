@@ -1,10 +1,22 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from sqlmodel import Field, Relationship, SQLModel
 import datetime
 import enum
 
 
+class UserType(str, enum.Enum):
+    SUBSCRIBER = "subscriber"
+    ADMINISTRATOR = "administrator"
+
+
+class AdminType(str, enum.Enum):
+    ADMIN = "admin"
+    WRITER = "writer"
+    MAINTAINER = "maintainer"
+
+
 class Role(str, enum.Enum):
+    """Deprecated - kept for backward compatibility"""
     WRITER = "writer"
     MAINTAINER = "maintainer"
     ADMIN = "admin"
@@ -19,8 +31,17 @@ class PostStatus(str, enum.Enum):
 
 class UserBase(SQLModel):
     username: str = Field(index=True, unique=True)
-    role: Role = Field(default=Role.WRITER)
+    email: Optional[str] = Field(default=None, index=True)
+    phone: Optional[str] = Field(default=None)
+    user_type: UserType = Field(default=UserType.SUBSCRIBER)
+    admin_type: Optional[AdminType] = Field(default=None)
     post_review_before_publish: bool = Field(default=False)
+    newsletter_subscribed: bool = Field(default=False)
+    is_verified: bool = Field(default=False)
+    verification_code: Optional[str] = Field(default=None)
+    
+    # Deprecated field - kept for backward compatibility
+    role: Optional[Role] = Field(default=None)
 
 
 class User(UserBase, table=True):
@@ -36,14 +57,25 @@ class UserCreate(UserBase):
 
 class UserUpdate(SQLModel):
     username: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
     password: Optional[str] = None
-    role: Optional[Role] = None
+    user_type: Optional[UserType] = None
+    admin_type: Optional[AdminType] = None
     post_review_before_publish: Optional[bool] = None
-
+    newsletter_subscribed: Optional[bool] = None
 
 
 class UserRead(UserBase):
     id: int
+
+
+class UserSignup(SQLModel):
+    username: str
+    email: str
+    password: str
+    phone: Optional[str] = None
+    newsletter_subscribed: bool = Field(default=False)
 
 
 class PostCategoryLink(SQLModel, table=True):
@@ -120,6 +152,8 @@ class PostUpdate(SQLModel):
 
 
 
+
+
 class PostRead(PostBase):
     id: int
     created_at: datetime.datetime
@@ -128,3 +162,8 @@ class PostRead(PostBase):
     category: Optional[CategoryRead] = None
     topics: List[CategoryRead] = []
     status: Optional[PostStatus] = None
+
+
+class PostSyncResponse(SQLModel):
+    posts: List[PostRead]
+    category_counts: Dict[int, int]

@@ -1,28 +1,21 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Session
 from cj36.core.config import settings
 from cj36.api.v1.router import api_router
 from cj36.dependencies import engine
+from cj36.core.seed import seed_database
 
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
 
-def seed_database():
-    """Seed the database with default data."""
-    from sqlmodel import Session
-    from cj36.core.seed import seed_categories
-    
-    with Session(engine) as session:
-        seed_categories(session)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
-    seed_database()
+    with Session(engine) as session:
+        seed_database(session)
     yield
 
 

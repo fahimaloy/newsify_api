@@ -5,7 +5,7 @@ from jose import JWTError, jwt
 from sqlmodel import Session, create_engine
 from cj36.core.config import settings
 from cj36.core.security import ALGORITHM, SECRET_KEY
-from cj36.models import User
+from cj36.models import User, UserType, AdminType
 
 engine = create_engine(settings.db_url)
 
@@ -54,14 +54,29 @@ async def get_optional_current_user(
     return user
 
 
-class RoleChecker:
-    def __init__(self, allowed_roles: List[str]):
-        self.allowed_roles = allowed_roles
+class AdminChecker:
+    """Check if user is an administrator with specific admin types."""
+    def __init__(self, allowed_admin_types: List[str]):
+        self.allowed_admin_types = allowed_admin_types
 
     def __call__(self, current_user: User = Depends(get_current_user)):
-        if current_user.role not in self.allowed_roles:
+        # Check if user is an administrator
+        if current_user.user_type != UserType.ADMINISTRATOR:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="The user doesn't have enough privileges",
+                detail="Administrator access required",
+            )
+        
+        # Check if admin_type is in allowed list
+        if current_user.admin_type not in self.allowed_admin_types:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient administrator privileges",
             )
         return current_user
+
+
+# Backward compatibility
+class RoleChecker(AdminChecker):
+    """Deprecated - use AdminChecker instead."""
+    pass

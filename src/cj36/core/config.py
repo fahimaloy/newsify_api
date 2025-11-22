@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     DB_PASSWORD: str
     DB_NAME: str
     DB_PORT: int = 5432
+    
+    # Email
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = "ashikinphotography@gmail.com"
+    SMTP_PASSWORD: str = "nsdn jkck hrly jwdy"
+    EMAILS_FROM_EMAIL: str = "ashikinphotography@gmail.com"
+    EMAILS_FROM_NAME: str = "Channel July 36"
 
     DATABASE_URL: str | None = None
 

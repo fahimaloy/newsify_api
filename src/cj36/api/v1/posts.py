@@ -7,14 +7,30 @@ from sqlmodel import Session, select
 from cj36.dependencies import (
     get_db,
     get_current_user,
-    RoleChecker,
+    AdminChecker,
     get_optional_current_user,
 )
-from cj36.models import Post, PostCreate, PostRead, PostUpdate, User, Category, PostStatus, Role, PostCategoryLink
+from cj36.models import (
+    Post,
+    PostCreate,
+    PostRead,
+    PostUpdate,
+    User,
+    Category,
+    PostStatus,
+    Role,
+    PostCategoryLink,
+    UserType,
+    PostCategoryLink,
+    UserType,
+    AdminType,
+    PostSyncResponse,
+)
+from sqlalchemy import func
 
 router = APIRouter()
 
-
+# ---------- Create Post ----------
 @router.post("/", response_model=PostRead)
 def create_post(
     title: str = Form(...),
@@ -24,19 +40,20 @@ def create_post(
     status: Optional[PostStatus] = Form(None),
     image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin", "writer"])),
+    # Writers are ADMINISTRATOR with admin_type WRITER; admins and maintainers can also create
+    current_user: User = Depends(AdminChecker(["admin", "maintainer", "writer"])),
 ):
     topics = db.query(Category).where(Category.id.in_(topic_ids)).all()
     if not topics:
         raise HTTPException(status_code=400, detail="Invalid topic IDs")
 
+    # Determine final category (same logic as before)
     parent_categories = set()
     for topic in topics:
         if topic.parent_id:
             parent_categories.add(topic.parent_id)
         else:
             parent_categories.add(topic.id)
-
     final_category_id = None
     if len(parent_categories) == 1:
         final_category_id = parent_categories.pop()
@@ -47,17 +64,14 @@ def create_post(
                 detail="Category must be one of the parent categories of the topics",
             )
         final_category_id = category_id
-    
+
     image_path = None
     if image:
-        # Generate unique filename
         file_extension = Path(image.filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_extension}"
         save_path = Path("static/images") / unique_filename
-        
         with save_path.open("wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
-            
         image_path = str(save_path)
 
     post_data = {
@@ -68,38 +82,58 @@ def create_post(
         "author_id": current_user.id,
         "image": image_path,
     }
-    
+
     if status is not None:
         post_data["status"] = status
-    
+
     db_post = Post(**post_data)
     db_post.topics = topics
 
+    # Apply review logic based on user flag
     if current_user.post_review_before_publish:
         db_post.status = PostStatus.PENDING
-    elif status is None: # If status not provided and no review needed, default to PUBLISHED
-         db_post.status = PostStatus.PUBLISHED
-    # Else use provided status (if valid for role, but here we trust the input or model default)
-    # Actually model default is DRAFT.
-    # Logic in previous code:
-    # if current_user.post_review_before_publish:
-    #     db_post.status = PostStatus.PENDING
-    # else:
-    #     db_post.status = PostStatus.PUBLISHED
-    
-    # Let's keep the previous logic for status if not explicitly provided
-    if status is None:
-        if current_user.post_review_before_publish:
-            db_post.status = PostStatus.PENDING
-        else:
-            db_post.status = PostStatus.PUBLISHED
+    elif status is None:
+        db_post.status = PostStatus.PUBLISHED
+    # else keep provided status (validated by enum)
 
     db.add(db_post)
     db.commit()
     db.refresh(db_post)
     return db_post
 
+# ---------- Sync Posts ----------
+@router.get("/sync", response_model=PostSyncResponse)
+def sync_posts(
+    last_id: int = 0,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    # 1. Fetch new posts
+    query = select(Post).where(Post.id > last_id)
+    
+    # Filter based on user role
+    if current_user is None:
+        query = query.where(Post.status == PostStatus.PUBLISHED)
+    elif current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type == AdminType.WRITER:
+        query = query.where(
+            (Post.author_id == current_user.id)
+            | (Post.status == PostStatus.PUBLISHED)
+        )
+    elif current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type in [AdminType.MAINTAINER, AdminType.ADMIN]:
+        pass
+    else:
+        query = query.where(Post.status == PostStatus.PUBLISHED)
+        
+    new_posts = db.exec(query.limit(50)).all()
+    
+    # 2. Fetch category counts (Total published posts per category)
+    count_query = select(Post.category_id, func.count(Post.id)).where(Post.status == PostStatus.PUBLISHED).group_by(Post.category_id)
+    counts = db.exec(count_query).all()
+    category_counts = {cat_id: count for cat_id, count in counts if cat_id is not None}
+    
+    return PostSyncResponse(posts=new_posts, category_counts=category_counts)
 
+# ---------- Read Posts ----------
 @router.get("/", response_model=List[PostRead])
 def read_posts(
     skip: int = 0,
@@ -110,23 +144,26 @@ def read_posts(
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     query = select(Post)
-    
+
     if category_id:
         query = query.where(Post.category_id == category_id)
-        
+
     if topic_ids:
         query = query.join(PostCategoryLink).where(PostCategoryLink.category_id.in_(topic_ids)).distinct()
 
     if current_user is None:
         query = query.where(Post.status == PostStatus.PUBLISHED)
-    elif current_user.role == Role.WRITER:
+    elif current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type == AdminType.WRITER:
         query = query.where(
             (Post.author_id == current_user.id)
             | (Post.status == PostStatus.PUBLISHED)
         )
-    elif current_user.role in [Role.MAINTAINER, Role.ADMIN]:
+    elif current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type in [AdminType.MAINTAINER, AdminType.ADMIN]:
         # Maintainers and Admins can see all posts
         pass
+    else:
+        # Subscribers or others
+        query = query.where(Post.status == PostStatus.PUBLISHED)
 
     posts = db.exec(query.offset(skip).limit(limit)).all()
     return posts
@@ -147,17 +184,19 @@ def read_post(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this post"
             )
-    elif current_user.role == Role.WRITER:
+    elif current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type == AdminType.WRITER:
         if db_post.author_id != current_user.id and db_post.status != PostStatus.PUBLISHED:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this post"
             )
-    elif current_user.role in [Role.MAINTAINER, Role.ADMIN]:
+    elif current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type in [AdminType.MAINTAINER, AdminType.ADMIN]:
         pass  # Maintainers and Admins can see all posts
     else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this post"
-        )
+        # Subscribers
+        if db_post.status != PostStatus.PUBLISHED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this post"
+            )
     return db_post
 
 
@@ -166,19 +205,19 @@ def update_post(
     post_id: int,
     post_in: PostUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin", "writer"])),  # Writers can update their own posts
+    current_user: User = Depends(AdminChecker(["admin", "maintainer", "writer"])),
 ):
     db_post = db.get(Post, post_id)
     if not db_post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    if current_user.role == Role.WRITER and db_post.author_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this post"
-        )
+    # Writers can only edit their own posts
+    if current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type == AdminType.WRITER:
+        if db_post.author_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this post")
     
     # Only Admin/Maintainer can update status
-    if post_in.status is not None and current_user.role not in [Role.ADMIN, Role.MAINTAINER]:
+    if post_in.status is not None and current_user.admin_type not in [AdminType.ADMIN, AdminType.MAINTAINER]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update post status"
         )
@@ -198,16 +237,15 @@ def update_post(
 def delete_post(
     post_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin", "writer"])),  # Writers can delete their own posts
+    current_user: User = Depends(AdminChecker(["admin", "maintainer", "writer"])),
 ):
     db_post = db.get(Post, post_id)
     if not db_post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    if current_user.role == Role.WRITER and db_post.author_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this post"
-        )
+    if current_user.user_type == UserType.ADMINISTRATOR and current_user.admin_type == AdminType.WRITER:
+        if db_post.author_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this post")
 
     # Eager load relationships before deletion for response
     # Or simpler: just return the ID or basic info?
@@ -227,7 +265,7 @@ def update_post_status(
     post_id: int,
     new_status: PostStatus = Body(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin", "maintainer"])),
+    current_user: User = Depends(AdminChecker(["admin", "maintainer"])),
 ):
     db_post = db.get(Post, post_id)
     if not db_post:

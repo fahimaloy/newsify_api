@@ -16,7 +16,7 @@ router = APIRouter()
 def create_category(
     category: CategoryCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin", "maintainer"])),
+    current_user: User = Depends(RoleChecker(["admin", "maintainer", "writer"])),
 ):
     db_category = Category.from_orm(category)
     db.add(db_category)

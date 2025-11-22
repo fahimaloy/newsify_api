@@ -9,12 +9,12 @@ from cj36.dependencies import (
     get_db,
     RoleChecker
 )
-from cj36.models import User, UserCreate, UserRead
+from cj36.models import User, UserCreate, UserRead, UserUpdate
 
 router = APIRouter()
 
 
-@router.post("/users/", response_model=UserRead)
+@router.post("/", response_model=UserRead)
 def create_user(
     user: UserCreate,
     db: Session = Depends(get_db),
@@ -36,7 +36,7 @@ def create_user(
     return db_user
 
 
-@router.get("/users/", response_model=List[UserRead])
+@router.get("/", response_model=List[UserRead])
 def read_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(RoleChecker(["admin", "maintainer"])),
@@ -45,7 +45,7 @@ def read_users(
     return users
 
 
-@router.get("/users/{user_id}", response_model=UserRead)
+@router.get("/{user_id}", response_model=UserRead)
 def read_user(
     user_id: int,
     db: Session = Depends(get_db),
@@ -57,10 +57,10 @@ def read_user(
     return user
 
 
-@router.patch("/users/{user_id}", response_model=UserRead)
+@router.patch("/{user_id}", response_model=UserRead)
 def update_user(
     user_id: int,
-    user_in: UserCreate,
+    user_in: UserUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(RoleChecker(["admin"])),
 ):
@@ -79,7 +79,7 @@ def update_user(
     return user
 
 
-@router.delete("/users/{user_id}", response_model=UserRead)
+@router.delete("/{user_id}", response_model=UserRead)
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),

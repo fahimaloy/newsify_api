@@ -25,7 +25,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add CORS middleware to allow frontend requests
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+from fastapi.staticfiles import StaticFiles
+
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/")

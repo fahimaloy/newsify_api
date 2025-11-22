@@ -1,5 +1,8 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+import shutil
+from pathlib import Path
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, File, UploadFile, Form
 from sqlmodel import Session, select
 from cj36.dependencies import (
     get_db,
@@ -7,18 +10,23 @@ from cj36.dependencies import (
     RoleChecker,
     get_optional_current_user,
 )
-from cj36.models import Post, PostCreate, PostRead, User, Category, PostStatus, Role
+from cj36.models import Post, PostCreate, PostRead, PostUpdate, User, Category, PostStatus, Role, PostCategoryLink
 
 router = APIRouter()
 
 
 @router.post("/", response_model=PostRead)
 def create_post(
-    post: PostCreate,
+    title: str = Form(...),
+    description: str = Form(...),
+    topic_ids: List[int] = Form(...),
+    category_id: Optional[int] = Form(None),
+    status: Optional[PostStatus] = Form(None),
+    image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(RoleChecker(["admin", "writer"])),
 ):
-    topics = db.query(Category).where(Category.id.in_(post.topic_ids)).all()
+    topics = db.query(Category).where(Category.id.in_(topic_ids)).all()
     if not topics:
         raise HTTPException(status_code=400, detail="Invalid topic IDs")
 
@@ -29,26 +37,62 @@ def create_post(
         else:
             parent_categories.add(topic.id)
 
-    category_id = None
+    final_category_id = None
     if len(parent_categories) == 1:
-        category_id = parent_categories.pop()
+        final_category_id = parent_categories.pop()
     else:
-        if post.category_id not in parent_categories:
+        if category_id not in parent_categories:
             raise HTTPException(
                 status_code=400,
                 detail="Category must be one of the parent categories of the topics",
             )
-        category_id = post.category_id
+        final_category_id = category_id
+    
+    image_path = None
+    if image:
+        # Generate unique filename
+        file_extension = Path(image.filename).suffix
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        save_path = Path("static/images") / unique_filename
+        
+        with save_path.open("wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+            
+        image_path = str(save_path)
 
-    db_post = Post.from_orm(post)
-    db_post.author_id = current_user.id
-    db_post.category_id = category_id
+    post_data = {
+        "title": title,
+        "description": description,
+        "topic_ids": topic_ids,
+        "category_id": final_category_id,
+        "author_id": current_user.id,
+        "image": image_path,
+    }
+    
+    if status is not None:
+        post_data["status"] = status
+    
+    db_post = Post(**post_data)
     db_post.topics = topics
 
     if current_user.post_review_before_publish:
         db_post.status = PostStatus.PENDING
-    else:
-        db_post.status = PostStatus.PUBLISHED
+    elif status is None: # If status not provided and no review needed, default to PUBLISHED
+         db_post.status = PostStatus.PUBLISHED
+    # Else use provided status (if valid for role, but here we trust the input or model default)
+    # Actually model default is DRAFT.
+    # Logic in previous code:
+    # if current_user.post_review_before_publish:
+    #     db_post.status = PostStatus.PENDING
+    # else:
+    #     db_post.status = PostStatus.PUBLISHED
+    
+    # Let's keep the previous logic for status if not explicitly provided
+    if status is None:
+        if current_user.post_review_before_publish:
+            db_post.status = PostStatus.PENDING
+        else:
+            db_post.status = PostStatus.PUBLISHED
 
     db.add(db_post)
     db.commit()
@@ -60,10 +104,19 @@ def create_post(
 def read_posts(
     skip: int = 0,
     limit: int = 100,
+    category_id: Optional[int] = None,
+    topic_ids: Optional[List[int]] = Query(None),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     query = select(Post)
+    
+    if category_id:
+        query = query.where(Post.category_id == category_id)
+        
+    if topic_ids:
+        query = query.join(PostCategoryLink).where(PostCategoryLink.category_id.in_(topic_ids)).distinct()
+
     if current_user is None:
         query = query.where(Post.status == PostStatus.PUBLISHED)
     elif current_user.role == Role.WRITER:
@@ -111,7 +164,7 @@ def read_post(
 @router.patch("/{post_id}", response_model=PostRead)
 def update_post(
     post_id: int,
-    post_in: PostCreate,
+    post_in: PostUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(RoleChecker(["admin", "writer"])),  # Writers can update their own posts
 ):
@@ -156,15 +209,23 @@ def delete_post(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this post"
         )
 
+    # Eager load relationships before deletion for response
+    # Or simpler: just return the ID or basic info?
+    # The response model is PostRead, which includes category/topics.
+    # We must load them.
+    # Actually, if we delete it, we can't refresh it.
+    # We should convert to PostRead before deleting.
+    post_read = PostRead.from_orm(db_post)
+    
     db.delete(db_post)
     db.commit()
-    return db_post
+    return post_read
 
 
 @router.patch("/status/{post_id}", response_model=PostRead)
 def update_post_status(
     post_id: int,
-    new_status: PostStatus,
+    new_status: PostStatus = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(RoleChecker(["admin", "maintainer"])),
 ):

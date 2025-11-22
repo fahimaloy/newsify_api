@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     SECRET_KEY: str
+    ALGORITHM: str = "HS256"
 
     # Database
     DB_HOST: str
@@ -14,8 +15,12 @@ class Settings(BaseSettings):
     DB_NAME: str
     DB_PORT: int = 5432
 
+    DATABASE_URL: str | None = None
+
     @property
     def db_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
         return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     model_config = {"env_file": ".env", "extra": "ignore"}

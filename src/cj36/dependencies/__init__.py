@@ -9,7 +9,7 @@ from cj36.models import User
 
 engine = create_engine(settings.db_url)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/users/token", auto_error=False)
 
 
 def get_db() -> Generator:
@@ -64,3 +64,4 @@ class RoleChecker:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="The user doesn't have enough privileges",
             )
+        return current_user

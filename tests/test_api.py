@@ -46,7 +46,7 @@ def admin_user_fixture(session: Session):
 @pytest.fixture(name="admin_token")
 def admin_token_fixture(client: TestClient, admin_user: User):
     response = client.post(
-        "/api/v1/token",
+        "/api/v1/users/token",
         data={"username": admin_user.username, "password": "pass"},
     )
     return response.json()["access_token"]
@@ -58,7 +58,7 @@ def maintainer_user_fixture(session: Session):
 @pytest.fixture(name="maintainer_token")
 def maintainer_token_fixture(client: TestClient, maintainer_user: User):
     response = client.post(
-        "/api/v1/token",
+        "/api/v1/users/token",
         data={"username": maintainer_user.username, "password": "pass"},
     )
     return response.json()["access_token"]
@@ -70,7 +70,7 @@ def writer_user_fixture(session: Session):
 @pytest.fixture(name="writer_token")
 def writer_token_fixture(client: TestClient, writer_user: User):
     response = client.post(
-        "/api/v1/token",
+        "/api/v1/users/token",
         data={"username": writer_user.username, "password": "pass"},
     )
     return response.json()["access_token"]
@@ -90,14 +90,29 @@ def create_category_helper(client: TestClient, name, bn_name=None, parent_id=Non
     response = client.post("/api/v1/categories/", json=category_data, headers=headers)
     return response
 
-def create_post_helper(client: TestClient, title, description, topic_ids, category_id, headers=None):
-    post_data = {
+def create_post_helper(client: TestClient, title, description, topic_ids, category_id, headers=None, image_path=None):
+    data = {
         "title": title,
         "description": description,
-        "topic_ids": topic_ids,
         "category_id": category_id,
     }
-    response = client.post("/api/v1/posts/", json=post_data, headers=headers)
+    
+    # Handle list of topic_ids for Form data
+    # Requests/TestClient handles list in data correctly for form-urlencoded/multipart
+    files = None
+    if image_path:
+        files = {"image": ("test_image.jpg", open(image_path, "rb"), "image/jpeg")}
+        
+    # We need to pass topic_ids as a list of values with the same key "topic_ids"
+    # TestClient/requests handles this if we pass a list in data
+    data["topic_ids"] = topic_ids
+
+    if files:
+        response = client.post("/api/v1/posts/", data=data, files=files, headers=headers)
+    else:
+        # When sending list in data with TestClient, it sends as form-urlencoded
+        response = client.post("/api/v1/posts/", data=data, headers=headers)
+        
     return response
 
 def test_root(client: TestClient):
@@ -119,7 +134,7 @@ def test_create_user_by_non_admin(client: TestClient, writer_token: str):
     response = create_user_helper(client, "anotherwriter", "anotherkey", Role.WRITER, False, headers)
     assert response.status_code == 403 # Forbidden
 
-def test_read_users_by_admin(client: TestClient, admin_token: str):
+def test_read_users_by_admin(client: TestClient, admin_token: str, writer_user: User):
     headers = {"Authorization": f"Bearer {admin_token}"}
     response = client.get("/api/v1/users/", headers=headers)
     assert response.status_code == 200
@@ -127,7 +142,7 @@ def test_read_users_by_admin(client: TestClient, admin_token: str):
     assert any(user["username"] == "adminuser" for user in users)
     assert any(user["username"] == "writeruser" for user in users)
 
-def test_read_users_by_maintainer(client: TestClient, maintainer_token: str):
+def test_read_users_by_maintainer(client: TestClient, maintainer_token: str, writer_user: User, admin_user: User):
     headers = {"Authorization": f"Bearer {maintainer_token}"}
     response = client.get("/api/v1/users/", headers=headers)
     assert response.status_code == 200
@@ -181,8 +196,8 @@ def test_delete_user_by_non_admin(client: TestClient, writer_token: str, maintai
 
 def test_login_for_access_token(client: TestClient, admin_user: User):
     response = client.post(
-        "/api/v1/token",
-        data={"username": admin_user.username, "password": "adminkey"},
+        "/api/v1/users/token",
+        data={"username": admin_user.username, "password": "pass"},
     )
     assert response.status_code == 200
     assert "access_token" in response.json()
@@ -198,8 +213,9 @@ def test_create_category_by_maintainer(client: TestClient, maintainer_token: str
 
 def test_create_category_by_writer(client: TestClient, writer_token: str):
     headers = {"Authorization": f"Bearer {writer_token}"}
-    response = create_category_helper(client, "Forbidden Category", headers=headers)
-    assert response.status_code == 403 # Forbidden
+    response = create_category_helper(client, "Writer Category", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["name"] == "Writer Category"
 
 def test_read_categories_public(client: TestClient):
     response = client.get("/api/v1/categories/")
@@ -277,7 +293,7 @@ def test_create_post_by_writer_published(client: TestClient, admin_token: str, w
     client.patch(f"/api/v1/users/{writer_user.id}", json={"post_review_before_publish": False}, headers=headers_admin)
 
     writer_token = client.post(
-        "/api/v1/token",
+        "/api/v1/users/token",
         data={"username": writer_user.username, "password": "pass"},
     ).json()["access_token"]
     headers_writer = {"Authorization": f"Bearer {writer_token}"}
@@ -289,9 +305,7 @@ def test_read_posts_anonymous(client: TestClient, admin_token: str, writer_user:
     headers_maintainer = {"Authorization": f"Bearer {maintainer_token}"}
     response_cat = create_category_helper(client, "News", headers=headers_maintainer)
     category_id = response_cat.json()["id"]
-    
-    # Create a pending post
-    headers_writer = {"Authorization": f"Bearer {client.post('/api/v1/token', data={'username': writer_user.username, 'password': 'writerkey'}).json()['access_token']}"}
+    headers_writer = {"Authorization": f"Bearer {client.post('/api/v1/users/token', data={'username': writer_user.username, 'password': 'pass'}).json()['access_token']}"}
     create_post_helper(client, "Anon Pending Post", "Pending content.", [category_id], category_id, headers_writer)
     
     # Create a published post
@@ -315,8 +329,8 @@ def test_read_posts_writer(client: TestClient, writer_token: str, admin_token: s
     create_post_helper(client, "Writer Draft Post", "Draft content.", [category_id], category_id, headers_writer)
     
     # Create another writer's published post
-    other_writer = create_user_in_db(client.app.dependency_overrides[get_db](), "otherwriter", "otherpass", Role.WRITER, False)
-    other_writer_token = client.post("/api/v1/token", data={"username": "otherwriter", "password": "otherpass"}).json()["access_token"]
+    other_writer = create_user_in_db(next(client.app.dependency_overrides[get_db]()), "otherwriter", "otherpass", Role.WRITER, False)
+    other_writer_token = client.post("/api/v1/users/token", data={"username": "otherwriter", "password": "otherpass"}).json()["access_token"]
     headers_other_writer = {"Authorization": f"Bearer {other_writer_token}"}
     create_post_helper(client, "Other Writer Published", "Other content.", [category_id], category_id, headers_other_writer)
 
@@ -335,7 +349,7 @@ def test_read_posts_maintainer(client: TestClient, maintainer_token: str, admin_
     # Writer pending post
     session.exec(select(User).where(User.username == writer_user.username)).first().post_review_before_publish = True
     session.commit()
-    headers_writer = {"Authorization": f"Bearer {client.post('/api/v1/token', data={'username': writer_user.username, 'password': 'writerkey'}).json()['access_token']}"}
+    headers_writer = {"Authorization": f"Bearer {client.post('/api/v1/users/token', data={'username': writer_user.username, 'password': 'pass'}).json()['access_token']}"}
     create_post_helper(client, "Maintainer Pending Post", "Pending content.", [category_id], category_id, headers_writer)
     
     # Admin published post
@@ -360,8 +374,8 @@ def test_read_single_post_anonymous(client: TestClient, admin_token: str, mainta
     published_post = create_post_helper(client, "Anon Single Published", "Content.", [category_id], category_id, headers_admin).json()
 
     # Pending post
-    writer_user = create_user_in_db(client.app.dependency_overrides[get_db](), "anonwriter", "pass", Role.WRITER, True)
-    headers_writer = {"Authorization": f"Bearer {client.post('/api/v1/token', data={'username': 'anonwriter', 'password': 'pass'}).json()['access_token']}"}
+    writer_user = create_user_in_db(next(client.app.dependency_overrides[get_db]()), "anonwriter", "pass", Role.WRITER, True)
+    headers_writer = {"Authorization": f"Bearer {client.post('/api/v1/users/token', data={'username': 'anonwriter', 'password': 'pass'}).json()['access_token']}"}
     pending_post = create_post_helper(client, "Anon Single Pending", "Content.", [category_id], category_id, headers_writer).json()
 
     response = client.get(f"/api/v1/posts/{published_post['id']}")
@@ -405,7 +419,7 @@ def test_update_post_status_by_maintainer(client: TestClient, maintainer_token: 
 
     # Create a pending post by writer
     client.patch(f"/api/v1/users/{writer_user.id}", json={"post_review_before_publish": True}, headers=headers_admin)
-    writer_token = client.post("/api/v1/token", data={"username": writer_user.username, "password": "writerkey"}).json()["access_token"]
+    writer_token = client.post("/api/v1/users/token", data={"username": writer_user.username, "password": "pass"}).json()["access_token"]
     headers_writer = {"Authorization": f"Bearer {writer_token}"}
     pending_post = create_post_helper(client, "Pending for Approval", "Needs approval.", [category_id], category_id, headers_writer).json()
 
@@ -427,7 +441,7 @@ def test_update_post_status_by_writer(client: TestClient, writer_token: str, mai
     category_id = response_cat.json()["id"]
 
     client.patch(f"/api/v1/users/{writer_user.id}", json={"post_review_before_publish": True}, headers=headers_admin)
-    writer_token = client.post("/api/v1/token", data={"username": writer_user.username, "password": "writerkey"}).json()["access_token"]
+    writer_token = client.post("/api/v1/users/token", data={"username": writer_user.username, "password": "pass"}).json()["access_token"]
     headers_writer = {"Authorization": f"Bearer {writer_token}"}
     
     pending_post = create_post_helper(client, "Writer status attempt", "Content.", [category_id], category_id, headers_writer).json()
@@ -457,3 +471,100 @@ def test_delete_post_by_writer_other_post(client: TestClient, writer_token: str,
     headers_writer = {"Authorization": f"Bearer {writer_token}"}
     response = client.delete(f"/api/v1/posts/{other_post['id']}", headers=headers_writer)
     assert response.status_code == 403 # Forbidden
+
+def test_read_posts_by_category(client: TestClient, maintainer_token: str, writer_token: str):
+    headers_maintainer = {"Authorization": f"Bearer {maintainer_token}"}
+    headers_writer = {"Authorization": f"Bearer {writer_token}"}
+    
+    # Create category
+    cat1 = create_category_helper(client, "Filter Cat 1", headers=headers_maintainer).json()
+    cat2 = create_category_helper(client, "Filter Cat 2", headers=headers_maintainer).json()
+    
+    # Create posts using writer
+    create_post_helper(client, "Post in Cat 1", "Desc", [cat1["id"]], cat1["id"], headers_writer)
+    create_post_helper(client, "Post in Cat 2", "Desc", [cat2["id"]], cat2["id"], headers_writer)
+    
+    # Filter by Cat 1 using maintainer (can see pending)
+    response = client.get(f"/api/v1/posts/?category_id={cat1['id']}", headers=headers_maintainer)
+    assert response.status_code == 200
+    posts = response.json()
+    assert len(posts) == 1
+    assert posts[0]["category"]["id"] == cat1["id"]
+
+def test_read_posts_by_topic(client: TestClient, maintainer_token: str, writer_token: str):
+    headers_maintainer = {"Authorization": f"Bearer {maintainer_token}"}
+    headers_writer = {"Authorization": f"Bearer {writer_token}"}
+    
+    # Create categories/topics
+    topic1 = create_category_helper(client, "Topic 1", headers=headers_maintainer).json()
+    topic2 = create_category_helper(client, "Topic 2", headers=headers_maintainer).json()
+    
+    # Create posts
+    create_post_helper(client, "Post with Topic 1", "Desc", [topic1["id"]], topic1["id"], headers_writer)
+    create_post_helper(client, "Post with Topic 2", "Desc", [topic2["id"]], topic2["id"], headers_writer)
+    create_post_helper(client, "Post with Both", "Desc", [topic1["id"], topic2["id"]], topic1["id"], headers_writer)
+    
+    # Filter by Topic 1
+    response = client.get(f"/api/v1/posts/?topic_ids={topic1['id']}", headers=headers_maintainer)
+    assert response.status_code == 200
+    posts = response.json()
+    assert len(posts) == 2 # Post with Topic 1 and Post with Both
+    
+    # Filter by Topic 2
+    response = client.get(f"/api/v1/posts/?topic_ids={topic2['id']}", headers=headers_maintainer)
+    assert response.status_code == 200
+    posts = response.json()
+    assert len(posts) == 2 # Post with Topic 2 and Post with Both
+
+def test_read_posts_pagination_filtering(client: TestClient, maintainer_token: str, writer_token: str):
+    headers_maintainer = {"Authorization": f"Bearer {maintainer_token}"}
+    headers_writer = {"Authorization": f"Bearer {writer_token}"}
+    
+    cat = create_category_helper(client, "Pagination Cat", headers=headers_maintainer).json()
+    
+    for i in range(5):
+        create_post_helper(client, f"Post {i}", "Desc", [cat["id"]], cat["id"], headers_writer)
+        
+    # Filter by Cat with limit
+    response = client.get(f"/api/v1/posts/?category_id={cat['id']}&limit=2&skip=0", headers=headers_maintainer)
+    assert response.status_code == 200
+    posts = response.json()
+    assert len(posts) == 2
+    
+    response = client.get(f"/api/v1/posts/?category_id={cat['id']}&limit=2&skip=2", headers=headers_maintainer)
+    assert response.status_code == 200
+    posts = response.json()
+    assert len(posts) == 2
+    
+    response = client.get(f"/api/v1/posts/?category_id={cat['id']}&limit=2&skip=4", headers=headers_maintainer)
+    assert response.status_code == 200
+    posts = response.json()
+    assert len(posts) == 1
+
+def test_create_post_with_image(client: TestClient, writer_token: str, tmp_path):
+    headers = {"Authorization": f"Bearer {writer_token}"}
+    
+    # Create category
+    cat = create_category_helper(client, "Image Cat", headers=headers).json()
+    
+    # Create a dummy image file
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    img_file = img_dir / "test.jpg"
+    img_file.write_bytes(b"fake image content")
+    
+    response = create_post_helper(
+        client, 
+        "Post with Image", 
+        "Desc", 
+        [cat["id"]], 
+        cat["id"], 
+        headers, 
+        image_path=str(img_file)
+    )
+    
+    assert response.status_code == 200
+    post = response.json()
+    assert post["image"] is not None
+    assert "static/images" in post["image"]
+    assert post["title"] == "Post with Image"

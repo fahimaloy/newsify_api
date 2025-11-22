@@ -34,6 +34,14 @@ class UserCreate(UserBase):
     password: str
 
 
+class UserUpdate(SQLModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[Role] = None
+    post_review_before_publish: Optional[bool] = None
+
+
+
 class UserRead(UserBase):
     id: int
 
@@ -79,6 +87,7 @@ class CategoryRead(CategoryBase):
 class PostBase(SQLModel):
     title: str
     description: str
+    image: Optional[str] = None
     status: PostStatus = Field(default=PostStatus.DRAFT)
 
 
@@ -100,6 +109,15 @@ class PostCreate(PostBase):
     topic_ids: List[int]
     category_id: Optional[int] = None
     status: Optional[PostStatus] = None
+
+
+class PostUpdate(SQLModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    topic_ids: Optional[List[int]] = None
+    category_id: Optional[int] = None
+    status: Optional[PostStatus] = None
+
 
 
 class PostRead(PostBase):

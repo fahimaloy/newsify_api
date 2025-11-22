@@ -10,9 +10,19 @@ def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
 
+def seed_database():
+    """Seed the database with default data."""
+    from sqlmodel import Session
+    from cj36.core.seed import seed_categories
+    
+    with Session(engine) as session:
+        seed_categories(session)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    seed_database()
     yield
 
 

@@ -51,3 +51,28 @@ def send_verification_email(to_email: str, code: str):
     </html>
     """
     return send_email(to_email, subject, html_content)
+
+def send_password_reset_email(to_email: str, code: str):
+    """
+    Send password reset OTP email.
+    """
+    subject = "Reset your Channel July 36 password"
+    html_content = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+                <h2 style="color: #C62828; text-align: center;">Password Reset Request</h2>
+                <p>We received a request to reset your password. Use the following OTP to proceed:</p>
+                <div style="background-color: #f5f5f5; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                    <h1 style="margin: 0; letter-spacing: 5px; color: #333;">{code}</h1>
+                </div>
+                <p>If you did not request a password reset, please ignore this email.</p>
+                <br>
+                <p style="font-size: 12px; color: #888; text-align: center;">
+                    &copy; 2025 Channel July 36. All rights reserved.
+                </p>
+            </div>
+        </body>
+    </html>
+    """
+    return send_email(to_email, subject, html_content)

@@ -4,11 +4,7 @@ These categories will be created on first run if the database is empty.
 """
 
 DEFAULT_CATEGORIES = [
-    {
-        "name": "প্রচ্ছদ",
-        "bn_name": "প্রচ্ছদ",
-        "children": []
-    },
+
     {
         "name": "তারুণ্য",
         "bn_name": "তারুণ্য",

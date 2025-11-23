@@ -2,7 +2,7 @@
 Database seeding utilities.
 """
 from sqlmodel import Session, select
-from cj36.models import Category, User, UserType, AdminType
+from cj36.models import Category, User, UserType, AdminType, Role
 from cj36.core.seed_data import DEFAULT_CATEGORIES
 from cj36.core.security import get_password_hash
 
@@ -53,6 +53,7 @@ def seed_database(session: Session) -> None:
             hashed_password=get_password_hash("admin123"),
             user_type=UserType.ADMINISTRATOR,
             admin_type=AdminType.ADMIN,
+            role=Role.ADMIN,  # Required by DB constraint (deprecated field)
             post_review_before_publish=False,
             newsletter_subscribed=False
         )

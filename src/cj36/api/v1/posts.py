@@ -39,6 +39,7 @@ def create_post(
     category_id: Optional[int] = Form(None),
     status: Optional[PostStatus] = Form(None),
     image: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     # Writers are ADMINISTRATOR with admin_type WRITER; admins and maintainers can also create
     current_user: User = Depends(AdminChecker(["admin", "maintainer", "writer"])),
@@ -73,6 +74,8 @@ def create_post(
         with save_path.open("wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
         image_path = str(save_path)
+    elif image_url:
+        image_path = image_url
 
     post_data = {
         "title": title,
@@ -200,10 +203,17 @@ def read_post(
     return db_post
 
 
-@router.patch("/{post_id}", response_model=PostRead)
+@router.put("/{post_id}", response_model=PostRead)
 def update_post(
     post_id: int,
-    post_in: PostUpdate,
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    topic_ids: Optional[List[int]] = Form(None),
+    category_id: Optional[int] = Form(None),
+    status: Optional[PostStatus] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
+    video_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(AdminChecker(["admin", "maintainer", "writer"])),
 ):
@@ -217,15 +227,46 @@ def update_post(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this post")
     
     # Only Admin/Maintainer can update status
-    if post_in.status is not None and current_user.admin_type not in [AdminType.ADMIN, AdminType.MAINTAINER]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update post status"
-        )
+    if status is not None and current_user.admin_type not in [AdminType.ADMIN, AdminType.MAINTAINER]:
+        # If writer tries to change status, ignore it or raise error?
+        # Let's ignore it for now or keep existing status if they send it.
+        # But if they explicitly try to change it, we should probably forbid.
+        # However, the form might send the current status.
+        if status != db_post.status:
+             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update post status"
+            )
 
-    # Similar logic for category and topics as in create_post
-    post_data = post_in.dict(exclude_unset=True)
-    for key, value in post_data.items():
-        setattr(db_post, key, value)
+    if title is not None:
+        db_post.title = title
+    if description is not None:
+        db_post.description = description
+    if category_id is not None:
+        db_post.category_id = category_id
+    if video_url is not None:
+        db_post.video_url = video_url
+    
+    # Handle status update if authorized
+    if status is not None and current_user.admin_type in [AdminType.ADMIN, AdminType.MAINTAINER]:
+        db_post.status = status
+
+    # Handle topics
+    if topic_ids is not None:
+        topics = db.query(Category).where(Category.id.in_(topic_ids)).all()
+        if not topics and topic_ids: # If IDs provided but no topics found
+             raise HTTPException(status_code=400, detail="Invalid topic IDs")
+        db_post.topics = topics
+
+    # Handle Image
+    if image:
+        file_extension = Path(image.filename).suffix
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        save_path = Path("static/images") / unique_filename
+        with save_path.open("wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        db_post.image = str(save_path)
+    elif image_url is not None:
+        db_post.image = image_url
 
     db.add(db_post)
     db.commit()

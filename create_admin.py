@@ -9,7 +9,7 @@ import re
 from getpass import getpass
 from sqlmodel import Session, select
 from cj36.dependencies import engine
-from cj36.models import User, UserType, AdminType
+from cj36.models import User, UserType, AdminType, Role
 from cj36.core.security import get_password_hash
 from cj36.core.email import send_email
 
@@ -192,6 +192,7 @@ def create_admin_user():
                 hashed_password=hashed_password,
                 user_type=UserType.ADMINISTRATOR,
                 admin_type=AdminType.ADMIN,
+                role=Role.ADMIN,  # Required by DB constraint (deprecated field)
                 is_verified=True,  # Email already verified
                 post_review_before_publish=False  # Admins don't need review
             )

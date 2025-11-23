@@ -33,11 +33,13 @@ class UserBase(SQLModel):
     username: str = Field(index=True, unique=True)
     email: Optional[str] = Field(default=None, index=True)
     phone: Optional[str] = Field(default=None)
+    full_name: Optional[str] = Field(default=None)
     user_type: UserType = Field(default=UserType.SUBSCRIBER)
     admin_type: Optional[AdminType] = Field(default=None)
     post_review_before_publish: bool = Field(default=False)
     newsletter_subscribed: bool = Field(default=False)
     is_verified: bool = Field(default=False)
+    is_blocked: bool = Field(default=False)
     verification_code: Optional[str] = Field(default=None)
     
     # Deprecated field - kept for backward compatibility
@@ -64,6 +66,7 @@ class UserUpdate(SQLModel):
     admin_type: Optional[AdminType] = None
     post_review_before_publish: Optional[bool] = None
     newsletter_subscribed: Optional[bool] = None
+    is_blocked: Optional[bool] = None
 
 
 class UserRead(UserBase):
@@ -120,6 +123,7 @@ class PostBase(SQLModel):
     title: str
     description: str
     image: Optional[str] = None
+    video_url: Optional[str] = None
     status: PostStatus = Field(default=PostStatus.DRAFT)
 
 
@@ -149,6 +153,8 @@ class PostUpdate(SQLModel):
     topic_ids: Optional[List[int]] = None
     category_id: Optional[int] = None
     status: Optional[PostStatus] = None
+    image: Optional[str] = None
+    video_url: Optional[str] = None
 
 
 
@@ -167,3 +173,51 @@ class PostRead(PostBase):
 class PostSyncResponse(SQLModel):
     posts: List[PostRead]
     category_counts: Dict[int, int]
+
+
+# Comment Models
+class CommentBase(SQLModel):
+    content: str
+
+
+class Comment(CommentBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    
+    post_id: int = Field(foreign_key="post.id")
+    author_id: int = Field(foreign_key="user.id")
+
+
+class CommentCreate(CommentBase):
+    pass
+
+
+class CommentRead(CommentBase):
+    id: int
+    created_at: datetime.datetime
+    author: UserRead
+    post_id: int
+
+
+# Bookmark Models
+class Bookmark(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    
+    post_id: int = Field(foreign_key="post.id")
+    user_id: int = Field(foreign_key="user.id")
+    
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+
+
+class BookmarkCreate(SQLModel):
+    post_id: int
+
+
+class BookmarkRead(SQLModel):
+    id: int
+    created_at: datetime.datetime
+    post: PostRead
+

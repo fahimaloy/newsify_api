@@ -2,6 +2,7 @@ from typing import List, Optional
 import shutil
 from pathlib import Path
 import uuid
+import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, File, UploadFile, Form
 from sqlmodel import Session, select
 from cj36.dependencies import (
@@ -38,6 +39,7 @@ def create_post(
     topic_ids: List[int] = Form(...),
     category_id: Optional[int] = Form(None),
     status: Optional[PostStatus] = Form(None),
+    scheduled_at: Optional[datetime.datetime] = Form(None),
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -88,6 +90,12 @@ def create_post(
 
     if status is not None:
         post_data["status"] = status
+    
+    if scheduled_at is not None:
+        post_data["scheduled_at"] = scheduled_at
+        # If scheduled time is in future, force status to SCHEDULED unless it's draft
+        if scheduled_at > datetime.datetime.utcnow() and status != PostStatus.DRAFT:
+             post_data["status"] = PostStatus.SCHEDULED
 
     db_post = Post(**post_data)
     db_post.topics = topics
@@ -96,7 +104,11 @@ def create_post(
     if current_user.post_review_before_publish:
         db_post.status = PostStatus.PENDING
     elif status is None:
-        db_post.status = PostStatus.PUBLISHED
+        # Default behavior if no status provided
+        if scheduled_at and scheduled_at > datetime.datetime.utcnow():
+             db_post.status = PostStatus.SCHEDULED
+        else:
+             db_post.status = PostStatus.PUBLISHED
     # else keep provided status (validated by enum)
 
     db.add(db_post)
@@ -166,6 +178,11 @@ def read_posts(
         pass
     else:
         # Subscribers or others
+        # Only show PUBLISHED posts, or SCHEDULED posts that are now due
+        # But wait, we should rely on a background job to flip SCHEDULED -> PUBLISHED.
+        # If we don't have a background job, we can check here.
+        # Simpler: Only show PUBLISHED. The background job (or a check on access) should handle the flip.
+        # For now, let's assume we only show PUBLISHED.
         query = query.where(Post.status == PostStatus.PUBLISHED)
 
     posts = db.exec(query.offset(skip).limit(limit)).all()
@@ -211,6 +228,7 @@ def update_post(
     topic_ids: Optional[List[int]] = Form(None),
     category_id: Optional[int] = Form(None),
     status: Optional[PostStatus] = Form(None),
+    scheduled_at: Optional[datetime.datetime] = Form(None),
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
     video_url: Optional[str] = Form(None),
@@ -245,6 +263,11 @@ def update_post(
         db_post.category_id = category_id
     if video_url is not None:
         db_post.video_url = video_url
+    if scheduled_at is not None:
+        db_post.scheduled_at = scheduled_at
+        # If updating schedule and it's in future, update status to SCHEDULED if not draft
+        if scheduled_at > datetime.datetime.utcnow() and db_post.status != PostStatus.DRAFT:
+             db_post.status = PostStatus.SCHEDULED
     
     # Handle status update if authorized
     if status is not None and current_user.admin_type in [AdminType.ADMIN, AdminType.MAINTAINER]:

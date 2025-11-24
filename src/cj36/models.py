@@ -27,6 +27,7 @@ class PostStatus(str, enum.Enum):
     DRAFT = "draft"
     PUBLISHED = "published"
     REJECTED = "rejected"
+    SCHEDULED = "scheduled"
 
 
 class UserBase(SQLModel):
@@ -125,6 +126,7 @@ class PostBase(SQLModel):
     image: Optional[str] = None
     video_url: Optional[str] = None
     status: PostStatus = Field(default=PostStatus.DRAFT)
+    scheduled_at: Optional[datetime.datetime] = Field(default=None)
 
 
 class Post(PostBase, table=True):
@@ -155,6 +157,7 @@ class PostUpdate(SQLModel):
     status: Optional[PostStatus] = None
     image: Optional[str] = None
     video_url: Optional[str] = None
+    scheduled_at: Optional[datetime.datetime] = None
 
 
 

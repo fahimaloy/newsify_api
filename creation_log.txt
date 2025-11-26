@@ -1,0 +1,3 @@
+Starting script...
+ℹ️  10 posts already exist.
+❌ Operation cancelled.

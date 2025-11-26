@@ -1,0 +1,1 @@
+DB URL: postgresql://cj36:cj36pass@localhost:5432/cj36

@@ -79,12 +79,18 @@ def verify_email(
     db.add(user)
     db.commit()
     
-    # Auto-login: generate token
-    access_token_expires = timedelta(minutes=30)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer", "message": "Verification successful"}
+    # Auto-login: generate tokens
+    from cj36.core.security import create_refresh_token
+    
+    access_token = create_access_token(data={"sub": user.username})
+    refresh_token = create_refresh_token(data={"sub": user.username})
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "message": "Verification successful"
+    }
 
 
 @router.post("/resend-verification")
@@ -317,9 +323,59 @@ def login_for_access_token(
             detail="Email verification required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
-    access_token_expires = timedelta(minutes=30)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+    
+    # Import refresh token function
+    from cj36.core.security import create_refresh_token
+    
+    # Create both access and refresh tokens
+    access_token = create_access_token(data={"sub": user.username})
+    refresh_token = create_refresh_token(data={"sub": user.username})
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/refresh")
+def refresh_access_token(
+    refresh_token: str = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    """Refresh access token using refresh token"""
+    from cj36.core.security import verify_token, create_refresh_token
+    
+    # Verify refresh token
+    payload = verify_token(refresh_token, token_type="refresh")
+    if not payload:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    
+    # Verify user still exists and is active
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    if not user.is_verified:
+        raise HTTPException(status_code=403, detail="User not verified")
+    
+    if user.is_blocked:
+        raise HTTPException(status_code=403, detail="User is blocked")
+    
+    # Create new tokens
+    new_access_token = create_access_token(data={"sub": user.username})
+    new_refresh_token = create_refresh_token(data={"sub": user.username})
+    
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer"
+    }

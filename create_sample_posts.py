@@ -14,21 +14,29 @@ def create_sample_posts():
         # Get admin user
         admin = session.exec(select(User).where(User.username == "admin")).first()
         if not admin:
+            with open("creation_log.txt", "a") as f:
+                f.write("❌ Admin user not found.\n")
             print("❌ Admin user not found. Please run create_admin_simple.py first.")
             return
         
         # Get categories
         categories = session.exec(select(Category)).all()
         if not categories:
+            with open("creation_log.txt", "a") as f:
+                f.write("❌ No categories found.\n")
             print("❌ No categories found. Please seed categories first.")
             return
         
         # Check if posts already exist
         existing_posts = session.exec(select(Post)).all()
         if existing_posts:
+            with open("creation_log.txt", "a") as f:
+                f.write(f"ℹ️  {len(existing_posts)} posts already exist.\n")
             print(f"ℹ️  {len(existing_posts)} posts already exist.")
             response = input("Do you want to create more sample posts? (yes/no): ").strip().lower()
             if response != "yes":
+                with open("creation_log.txt", "a") as f:
+                    f.write("❌ Operation cancelled.\n")
                 print("❌ Operation cancelled.")
                 return
         
@@ -118,6 +126,8 @@ def create_sample_posts():
             )
             session.add(post)
             created_count += 1
+            with open("creation_log.txt", "a") as f:
+                f.write(f"  ✅ Created: {post.title[:50]}...\n")
             print(f"  ✅ Created: {post.title[:50]}...")
         
         session.commit()
@@ -128,9 +138,15 @@ def create_sample_posts():
         print("=" * 60)
 
 
+
 if __name__ == "__main__":
     try:
+        with open("creation_log.txt", "w") as f:
+            f.write("Starting script...\n")
         create_sample_posts()
     except Exception as e:
+        with open("creation_log.txt", "a") as f:
+            f.write(f"❌ Error creating sample posts: {e}\n")
         print(f"❌ Error creating sample posts: {e}")
         raise
+

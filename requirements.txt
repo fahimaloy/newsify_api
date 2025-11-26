@@ -1,0 +1,29 @@
+# Core Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Configuration & Environment
+pydantic-settings>=2.5.0
+python-dotenv>=1.0.0
+
+# Database
+asyncpg>=0.29.0
+sqlmodel>=0.0.19
+psycopg2-binary>=2.9.9
+
+# Authentication & Security
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+bcrypt<4.0.0
+
+# File Upload & Forms
+python-multipart>=0.0.9
+
+# Background Tasks & Scheduling
+apscheduler>=3.11.1
+
+# System Utilities
+psutil>=6.0.0
+
+# Additional dependencies that may be needed
+email-validator>=2.0.0
